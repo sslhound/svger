@@ -152,6 +152,7 @@ void Server::handle_post(http_request message)
 
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
+    g_object_unref(handle);
 };
 
 //

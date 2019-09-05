@@ -16,10 +16,10 @@ RUN cmake . && make
 FROM ubuntu
 
 RUN apt-get update && apt-get install -y libcairo2 librsvg2-bin libcpprest
-
+RUN apt-get install -y valgrind
 WORKDIR /app
 
 COPY --from=build /src/svger ./
 COPY --from=build /src/badge.svg ./
 
-CMD ["/app/svger"]
+CMD ["valgrind", "--leak-check=full", "/app/svger"]
