@@ -92,20 +92,15 @@ static _cairo_status cairoWriteFunc(void *closure,
 //
 void Server::handle_post(http_request message)
 {
-    ucout << message.to_string() << endl;
     auto body = message.extract_string(true).get();
-    ucout << body << endl;
 
     GError *error = NULL;
     RsvgHandle *handle;
     RsvgDimensionData dim;
     double width, height;
-    const char *output_filename = "results/badge.png";
     cairo_surface_t *surface;
     cairo_t *cr;
     cairo_status_t status;
-    int mode = 1;
-    char *memblock;
     streampos size;
 
     handle = rsvg_handle_new_from_data((const guint8 *)body.c_str(), (gsize)body.size(), &error);
@@ -141,42 +136,22 @@ void Server::handle_post(http_request message)
     // auto data = cairo_image_surface_get_data(surface);
 
     std::vector<unsigned char> out;
-    cairo_surface_write_to_png_stream(surface, cairoWriteFunc, &out);
-
-    // int raw_width = cairo_image_surface_get_width(surface);
-    // int raw_height = cairo_image_surface_get_height(surface);
-    // int row_byte_size = cairo_image_surface_get_stride(surface);
-
-    // unsigned char *raw_buffer = cairo_image_surface_get_data(surface);
-    // std::cout << "got some raw data" << std::endl;
-    // size_t size2 = strlen((const char *)raw_buffer);
-    // std::cout << size2 << std::endl;
-
-    // vector<unsigned char> vec;
-    // vec.assign(raw_buffer, raw_buffer + row_byte_size);
-
-    // vec.insert(vec.end(), raw_buffer, raw_buffer + size2);
-    std::cout << "populated vec" << std::endl
-              << out.size() << std::endl;
-
-    // message.headers().set_content_type(U("image/svg+xml"));
-    std::cout << "set the content type" << std::endl;
-    std::cout << "set the body" << std::endl;
+    status = cairo_surface_write_to_png_stream(surface, cairoWriteFunc, &out);
+    if (status)
+    {
+        std::cerr << "cairo_status: " << std::endl
+                  << cairo_status_to_string(status) << std::endl;
+        message.reply(status_codes::InternalError, U(cairo_status_to_string(status)));
+        return;
+    }
 
     web::http::http_response response(status_codes::OK);
     response.headers().set_content_type(U("image/svg+xml"));
     response.set_body(out);
-
-    std::cout << response.to_string() << std::endl;
-
     message.reply(response);
-
-    std::cout << "wrote the response" << std::endl;
 
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
-
-    delete[] memblock;
 };
 
 //
