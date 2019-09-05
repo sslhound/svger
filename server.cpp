@@ -29,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <boost/thread/mutex.hpp>
 
 using namespace std;
 using namespace web;
@@ -52,6 +53,7 @@ private:
     void handle_delete(http_request message);
 
     http_listener m_listener;
+    boost::mutex mutex;
 };
 
 Server::Server(utility::string_t url) : m_listener(url)
@@ -92,6 +94,8 @@ static _cairo_status cairoWriteFunc(void *closure,
 //
 void Server::handle_post(http_request message)
 {
+    boost::mutex::scoped_lock scoped_lock(mutex);
+
     auto body = message.extract_string(true).get();
 
     GError *error = NULL;
@@ -101,7 +105,6 @@ void Server::handle_post(http_request message)
     cairo_surface_t *surface;
     cairo_t *cr;
     cairo_status_t status;
-    streampos size;
 
     handle = rsvg_handle_new_from_data((const guint8 *)body.c_str(), (gsize)body.size(), &error);
     if (error != NULL)
@@ -109,6 +112,8 @@ void Server::handle_post(http_request message)
         std::cerr << "rsvg_handle_new_from_file error: " << std::endl
                   << error->message << std::endl;
         message.reply(status_codes::InternalError, U(error->message));
+
+        g_error_free(error);
         return;
     }
 
@@ -130,10 +135,6 @@ void Server::handle_post(http_request message)
         message.reply(status_codes::InternalError, U(cairo_status_to_string(status)));
         return;
     }
-
-    // unsigned char * cairo_image_surface_get_data (cairo_surface_t *surface);
-    // cairo_surface_write_to_png(surface, output_filename);
-    // auto data = cairo_image_surface_get_data(surface);
 
     std::vector<unsigned char> out;
     status = cairo_surface_write_to_png_stream(surface, cairoWriteFunc, &out);

@@ -22,4 +22,5 @@ WORKDIR /app
 COPY --from=build /src/svger ./
 COPY --from=build /src/badge.svg ./
 
-CMD ["valgrind", "--leak-check=full", "/app/svger"]
+# CMD ["valgrind", "--leak-check=full", "/app/svger"]
+CMD ["/app/svger"]
