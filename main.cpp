@@ -25,7 +25,7 @@ int main()
     RsvgDimensionData dim;
     double width, height;
     const char *filename = "badge.svg";
-    const char *output_filename = "results/out-badge";
+    const char *output_filename = "results/badge.png";
     cairo_surface_t *surface;
     cairo_t *cr;
     cairo_status_t status;

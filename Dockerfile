@@ -8,7 +8,7 @@ RUN apt-get install -y librsvg2-dev libcairo2 libcairo2-dev
 
 WORKDIR /src
 
-COPY CMakeLists.txt main.cpp rsvg.c badge.svg ./
+COPY CMakeLists.txt main.cpp badge.svg ./
 COPY modules/* ./modules/
 
 RUN find ./
