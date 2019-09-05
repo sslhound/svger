@@ -9,6 +9,15 @@
  * =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
  ****/
 
+#include <iostream>
+#include <stdio.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <cairo.h>
+#include <math.h>
+#include <librsvg/rsvg.h>
+#include <iostream>
+#include <fstream>
 #include "cpprest/asyncrt_utils.h"
 #include "cpprest/http_listener.h"
 #include "cpprest/json.h"
@@ -61,13 +70,113 @@ void Server::handle_get(http_request message)
     message.reply(status_codes::OK, U("OK"));
 };
 
+static _cairo_status cairoWriteFunc(void *closure,
+                                    const unsigned char *data,
+                                    unsigned int length)
+{
+    // cast back the vector passed as user parameter on cairo_surface_write_to_png_stream
+    // see the cairo_surface_write_to_png_stream doc for details
+    auto outData = static_cast<std::vector<uint8_t> *>(closure);
+
+    auto offset = static_cast<unsigned int>(outData->size());
+    outData->resize(offset + length);
+
+    memcpy(outData->data() + offset, data, length);
+
+    return CAIRO_STATUS_SUCCESS;
+}
+
 //
 // A POST of the dealer resource creates a new table and returns a resource for
 // that table.
 //
 void Server::handle_post(http_request message)
 {
-    message.reply(status_codes::MethodNotAllowed, U("Method not allowed"));
+    ucout << message.to_string() << endl;
+    auto body = message.extract_string(true).get();
+    ucout << body << endl;
+
+    GError *error = NULL;
+    RsvgHandle *handle;
+    RsvgDimensionData dim;
+    double width, height;
+    const char *output_filename = "results/badge.png";
+    cairo_surface_t *surface;
+    cairo_t *cr;
+    cairo_status_t status;
+    int mode = 1;
+    char *memblock;
+    streampos size;
+
+    handle = rsvg_handle_new_from_data((const guint8 *)body.c_str(), (gsize)body.size(), &error);
+    if (error != NULL)
+    {
+        std::cerr << "rsvg_handle_new_from_file error: " << std::endl
+                  << error->message << std::endl;
+        message.reply(status_codes::InternalError, U(error->message));
+        return;
+    }
+
+    rsvg_handle_get_dimensions(handle, &dim);
+    width = dim.width;
+    height = dim.height;
+
+    surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+
+    cr = cairo_create(surface);
+
+    rsvg_handle_render_cairo(handle, cr);
+
+    status = cairo_status(cr);
+    if (status)
+    {
+        std::cerr << "cairo_status: " << std::endl
+                  << cairo_status_to_string(status) << std::endl;
+        message.reply(status_codes::InternalError, U(cairo_status_to_string(status)));
+        return;
+    }
+
+    // unsigned char * cairo_image_surface_get_data (cairo_surface_t *surface);
+    // cairo_surface_write_to_png(surface, output_filename);
+    // auto data = cairo_image_surface_get_data(surface);
+
+    std::vector<unsigned char> out;
+    cairo_surface_write_to_png_stream(surface, cairoWriteFunc, &out);
+
+    // int raw_width = cairo_image_surface_get_width(surface);
+    // int raw_height = cairo_image_surface_get_height(surface);
+    // int row_byte_size = cairo_image_surface_get_stride(surface);
+
+    // unsigned char *raw_buffer = cairo_image_surface_get_data(surface);
+    // std::cout << "got some raw data" << std::endl;
+    // size_t size2 = strlen((const char *)raw_buffer);
+    // std::cout << size2 << std::endl;
+
+    // vector<unsigned char> vec;
+    // vec.assign(raw_buffer, raw_buffer + row_byte_size);
+
+    // vec.insert(vec.end(), raw_buffer, raw_buffer + size2);
+    std::cout << "populated vec" << std::endl
+              << out.size() << std::endl;
+
+    // message.headers().set_content_type(U("image/svg+xml"));
+    std::cout << "set the content type" << std::endl;
+    std::cout << "set the body" << std::endl;
+
+    web::http::http_response response(status_codes::OK);
+    response.headers().set_content_type(U("image/svg+xml"));
+    response.set_body(out);
+
+    std::cout << response.to_string() << std::endl;
+
+    message.reply(response);
+
+    std::cout << "wrote the response" << std::endl;
+
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+
+    delete[] memblock;
 };
 
 //
