@@ -1,20 +1,73 @@
+#define _USE_MATH_DEFINES
+
 #include <iostream>
 #include <stdio.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <cairo.h>
-#define _USE_MATH_DEFINES
 #include <math.h>
-// #include <glib/gprintf.h>
 #include <librsvg/rsvg.h>
-// #include <librsvg/rsvg-cairo.h>
 #include <iostream>
 #include <fstream>
+#include "cpprest/asyncrt_utils.h"
+#include "cpprest/http_listener.h"
+#include "cpprest/json.h"
+#include "cpprest/uri.h"
+#include <algorithm>
+#include <fstream>
+#include <iostream>
+#include <random>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace std;
+using namespace web;
+using namespace http;
+using namespace utility;
+using namespace http::experimental::listener;
 
-int main()
+class Server
+{
+public:
+    Server() {}
+    Server(utility::string_t url);
+
+    pplx::task<void> open() { return m_listener.open(); }
+    pplx::task<void> close() { return m_listener.close(); }
+
+private:
+    void handle_get(http_request message);
+    void handle_put(http_request message);
+    void handle_post(http_request message);
+    void handle_delete(http_request message);
+
+    http_listener m_listener;
+};
+
+std::unique_ptr<Server> g_httpServer;
+
+void on_initialize(const string_t &address)
+{
+    uri_builder uri(address);
+    uri.append_path(U("/"));
+
+    utility::string_t addr = uri.to_uri().to_string();
+    g_httpServer = std::unique_ptr<Server>(new Server(addr));
+    g_httpServer->open().wait();
+
+    ucout << utility::string_t(U("Listening for requests at: ")) << addr << std::endl;
+
+    return;
+}
+
+void on_shutdown()
+{
+    g_httpServer->close().wait();
+    return;
+}
+
+int main(int argc, char *argv[])
 {
     std::cout << "Hello, World!" << std::endl;
 
@@ -98,5 +151,21 @@ int main()
 
     delete[] memblock;
 
+    utility::string_t port = U("34568");
+    if (argc == 2)
+    {
+        port = argv[1];
+    }
+
+    utility::string_t address = U("http://0.0.0.0:");
+    address.append(port);
+
+    on_initialize(address);
+    std::cout << "Press ENTER to exit." << std::endl;
+
+    std::string line;
+    std::getline(std::cin, line);
+
+    on_shutdown();
     return 0;
 }
