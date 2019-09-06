@@ -70,10 +70,12 @@ int main(int argc, char *argv[])
     spdlog::set_level(spdlog::level::debug);
 
     CLI::App app{"svger"};
-    utility::string_t listen = "0.0.0.0:5003";
+    utility::string_t listen = "0.0.0.0";
     std::string environment = "development";
     int max_size = 1048576;
+    int port = 5003;
     app.add_option("--listen", listen, "Listen on a specific interface and port.")->envname("LISTEN")->capture_default_str();
+    app.add_option("--port", port, "Listen on a specific port.")->envname("PORT")->capture_default_str();
     app.add_option("--environment", environment, "The environment.")->envname("ENVIRONMENT")->capture_default_str();
     app.add_option("--max-size", max_size, "The max SVG size to process.")->envname("MAX_SIZE")->capture_default_str();
 
@@ -92,8 +94,10 @@ int main(int argc, char *argv[])
 
     spdlog::info("svger starting up environment={} listen={}", environment, listen);
 
-    utility::string_t address = U("http://");
-    address.append(listen);
+    std::ostringstream stringStream;
+    stringStream << "http://" << listen << ":" << port;
+    std::string copyOfStr = stringStream.str();
+    utility::string_t address = U(stringStream.str());
 
     on_initialize(address, max_size);
 

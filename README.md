@@ -12,14 +12,17 @@ From the `--help` option:
     
     Options:
       -h,--help                   Print this help message and exit
-      --listen TEXT=0.0.0.0:5003 (Env:LISTEN)
+      --listen TEXT=0.0.0.0 (Env:LISTEN)
                                   Listen on a specific interface and port.
+      --port INT=5003 (Env:PORT)  Listen on a specific port.
       --environment TEXT=development (Env:ENVIRONMENT)
                                   The environment.
       --max-size INT=1048576 (Env:MAX_SIZE)
                                   The max SVG size to process.
 
-The `listen` option defaults to "0.0.0.0:5003" and can be set with the `LISTEN` environment variable.
+The `listen` option defaults to "0.0.0.0" and can be set with the `LISTEN` environment variable.
+
+The `port` option defaults to "5003" and can be set with the `PORT` environment variable.
 
 The `environment` option defaults to "development" and can be set with the `ENVIRONMENT` environment variable. Setting this to "production" will disable the "DEBUG" log level.
 
@@ -89,7 +92,7 @@ Build the container.
 
 Run the container.
 
-    $ docker run --rm -i -p 34568:5003 your_favorite_tag /app/svger --listen 0.0.0.0:5003 --environment production
+    $ docker run --rm -i -p 34568:5003 your_favorite_tag /app/svger --environment production
     [2019-09-06 13:54:19.553] [info] svger starting up environment=production listen=0.0.0.0:5003
     [2019-09-06 13:54:19.557] [info] Started server on http://0.0.0.0:5003/
     Press ENTER to exit.
