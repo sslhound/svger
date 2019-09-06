@@ -94,6 +94,58 @@ Run the container.
     [2019-09-06 13:54:19.557] [info] Started server on http://0.0.0.0:5003/
     Press ENTER to exit.
 
+# Deployment
+
+Deploying this to kubernetes is easy.
+
+```yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: svger
+  name: svger
+spec:
+  ports:
+    - port: 5004
+      protocol: TCP
+      targetPort: 5003
+  selector:
+    app: svger
+    environment: production
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: svger
+  labels:
+    environment: production
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: svger
+        environment: production
+    spec:
+      imagePullSecrets:
+        - name: github-registry
+      containers:
+        - name: svger
+          image: docker.pkg.github.com/sslhound/svger/svger:v1.0.1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5003
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+```
+
+In your other deployments you can set the SVGer endpoint to "http://svger.default.svc.cluster.local:5004/".
+
 # Credits
 
 Thanks to the developers of cpprestsdk, spdlog, and CLI11.
