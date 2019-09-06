@@ -1,25 +1,10 @@
-#define _USE_MATH_DEFINES
-
-#include <iostream>
 #include <stdio.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <cairo.h>
-#include <math.h>
-#include <librsvg/rsvg.h>
-#include <iostream>
-#include <fstream>
 #include "cpprest/asyncrt_utils.h"
 #include "cpprest/http_listener.h"
 #include "cpprest/json.h"
 #include "cpprest/uri.h"
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <random>
-#include <sstream>
-#include <string>
-#include <vector>
+#include "spdlog/spdlog.h"
+#include "CLI/CLI.hpp"
 
 using namespace std;
 using namespace web;
@@ -31,7 +16,7 @@ class Server
 {
 public:
     Server() {}
-    Server(utility::string_t url);
+    Server(utility::string_t url, int max_size);
 
     pplx::task<void> open() { return m_listener.open(); }
     pplx::task<void> close() { return m_listener.close(); }
@@ -47,16 +32,16 @@ private:
 
 std::unique_ptr<Server> g_httpServer;
 
-void on_initialize(const string_t &address)
+void on_initialize(const string_t &address, int max_size)
 {
     uri_builder uri(address);
     uri.append_path(U("/"));
 
     utility::string_t addr = uri.to_uri().to_string();
-    g_httpServer = std::unique_ptr<Server>(new Server(addr));
+    g_httpServer = std::unique_ptr<Server>(new Server(addr, max_size));
     g_httpServer->open().wait();
 
-    ucout << utility::string_t(U("Listening for requests at: ")) << addr << std::endl;
+    spdlog::info("Started server on {}", addr);
 
     return;
 }
@@ -69,98 +54,29 @@ void on_shutdown()
 
 int main(int argc, char *argv[])
 {
-    std::cout << "Hello, World!" << std::endl;
+    spdlog::set_level(spdlog::level::debug);
 
-    // printf("Hello!\n");
+    CLI::App app{"svger"};
+    utility::string_t listen = "http://0.0.0.0:5003";
+    std::string environment = "development";
+    int max_size = 2 * 1048576;
+    app.add_option("--listen", listen, "Listen on a specific interface and port.")->envname("LISTEN");
+    app.add_option("--environment", environment, "The environment.")->envname("ENVIRONMENT");
+    app.add_option("--max-size", max_size, "The max SVG size to process.")->envname("MAX_SIZE");
 
-    // GError *error = NULL;
-    // RsvgHandle *handle;
-    // RsvgDimensionData dim;
-    // double width, height;
-    // const char *filename = "badge.svg";
-    // const char *output_filename = "results/badge.png";
-    // cairo_surface_t *surface;
-    // cairo_t *cr;
-    // cairo_status_t status;
-    // int mode = 1;
-    // char *memblock;
-    // streampos size;
+    CLI11_PARSE(app, argc, argv);
 
-    // //g_type_init ();
-
-    // // RsvgHandle *rsvg_handle_new_from_data (const guint8 * data, gsize data_len, GError ** error);
-    // // read svg file
-    // ifstream file(filename, ios::in | ios::binary | ios::ate);
-    // std::cout << "Try to read file!" << std::endl;
-    // if (file.is_open())
-    // {
-    //     size = file.tellg();
-    //     memblock = new char[size];
-    //     file.seekg(0, ios::beg);
-    //     file.read(memblock, size);
-    //     file.close();
-    //     printf("SVG File Content!\n");
-    //     printf("%s\n", memblock);
-    // }
-
-    // rsvg_set_default_dpi(72.0);
-    // handle = rsvg_handle_new_from_data((const guint8 *)memblock, (gsize)size, &error);
-    // //handle = rsvg_handle_new_from_file (filename, &error);
-    // if (error != NULL)
-    // {
-    //     printf("rsvg_handle_new_from_file error!\n");
-    //     printf("%s\n", error->message);
-    //     return 1;
-    // }
-
-    // rsvg_handle_get_dimensions(handle, &dim);
-    // width = dim.width;
-    // height = dim.height;
-
-    // surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
-
-    // cr = cairo_create(surface);
-
-    // rsvg_handle_render_cairo(handle, cr);
-
-    // status = cairo_status(cr);
-    // if (status)
-    // {
-    //     printf("cairo_status!\n");
-    //     printf("%s\n", cairo_status_to_string(status));
-    //     return 1;
-    // }
-
-    // // unsigned char * cairo_image_surface_get_data (cairo_surface_t *surface);
-    // cairo_surface_write_to_png(surface, output_filename);
-
-    // int raw_width = cairo_image_surface_get_width(surface);
-    // int raw_height = cairo_image_surface_get_height(surface);
-    // int row_byte_size = cairo_image_surface_get_stride(surface);
-    // printf("\nWIDTH: %d, HEIGHT: %d, row_bytes=%d\n", raw_width, raw_height, row_byte_size);
-
-    // unsigned char *raw_buffer = cairo_image_surface_get_data(surface);
-
-    // FILE *pFile;
-    // pFile = fopen("results/myfile.bin", "wb");
-    // fwrite(raw_buffer, sizeof(char), raw_height * row_byte_size, pFile);
-    // fclose(pFile);
-
-    // cairo_destroy(cr);
-    // cairo_surface_destroy(surface);
-
-    // delete[] memblock;
-
-    utility::string_t port = U("34568");
-    if (argc == 2)
+    if (environment == "production")
     {
-        port = argv[1];
+        spdlog::set_level(spdlog::level::info);
     }
 
-    utility::string_t address = U("http://0.0.0.0:");
-    address.append(port);
+    spdlog::info("svger starting up environment={} listen={}", environment, listen);
 
-    on_initialize(address);
+    utility::string_t address = U("http://");
+    address.append(listen);
+
+    on_initialize(address, max_size);
     std::cout << "Press ENTER to exit." << std::endl;
 
     std::string line;

@@ -1,35 +1,20 @@
-/***
- * Copyright (C) Microsoft. All rights reserved.
- * Licensed under the MIT license. See LICENSE.txt file in the project root for full license information.
- *
- * =+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
- *
- * Dealer.cpp : Contains the main logic of the black jack dealer
- *
- * =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
- ****/
-
 #include <iostream>
-#include <stdio.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <cairo.h>
 #include <math.h>
-#include <librsvg/rsvg.h>
-#include <iostream>
 #include <fstream>
+#include <algorithm>
+#include <random>
+#include <sstream>
+#include <vector>
+#include <cairo.h>
+#include <librsvg/rsvg.h>
 #include "cpprest/asyncrt_utils.h"
 #include "cpprest/http_listener.h"
 #include "cpprest/json.h"
 #include "cpprest/uri.h"
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <random>
-#include <sstream>
-#include <string>
-#include <vector>
 #include <boost/thread/mutex.hpp>
+#include "spdlog/spdlog.h"
 
 using namespace std;
 using namespace web;
@@ -41,7 +26,7 @@ class Server
 {
 public:
     Server() {}
-    Server(utility::string_t url);
+    Server(utility::string_t url, int max_size);
 
     pplx::task<void> open() { return m_listener.open(); }
     pplx::task<void> close() { return m_listener.close(); }
@@ -54,9 +39,19 @@ private:
 
     http_listener m_listener;
     boost::mutex mutex;
+    int max_size;
 };
 
-Server::Server(utility::string_t url) : m_listener(url)
+static _cairo_status cairoWriteFunc(void *context, const unsigned char *data, unsigned int length)
+{
+    auto outData = static_cast<std::vector<uint8_t> *>(context);
+    auto offset = static_cast<unsigned int>(outData->size());
+    outData->resize(offset + length);
+    memcpy(outData->data() + offset, data, length);
+    return CAIRO_STATUS_SUCCESS;
+}
+
+Server::Server(utility::string_t url, int max_size) : m_listener(url), max_size(max_size)
 {
     m_listener.support(methods::GET, std::bind(&Server::handle_get, this, std::placeholders::_1));
     m_listener.support(methods::PUT, std::bind(&Server::handle_put, this, std::placeholders::_1));
@@ -64,39 +59,41 @@ Server::Server(utility::string_t url) : m_listener(url)
     m_listener.support(methods::DEL, std::bind(&Server::handle_delete, this, std::placeholders::_1));
 }
 
-//
-// A GET of the dealer resource produces a list of existing tables.
-//
 void Server::handle_get(http_request message)
 {
     message.reply(status_codes::OK, U("OK"));
 };
 
-static _cairo_status cairoWriteFunc(void *closure,
-                                    const unsigned char *data,
-                                    unsigned int length)
-{
-    // cast back the vector passed as user parameter on cairo_surface_write_to_png_stream
-    // see the cairo_surface_write_to_png_stream doc for details
-    auto outData = static_cast<std::vector<uint8_t> *>(closure);
-
-    auto offset = static_cast<unsigned int>(outData->size());
-    outData->resize(offset + length);
-
-    memcpy(outData->data() + offset, data, length);
-
-    return CAIRO_STATUS_SUCCESS;
-}
-
-//
-// A POST of the dealer resource creates a new table and returns a resource for
-// that table.
-//
 void Server::handle_post(http_request message)
 {
+    auto headers = message.headers();
+
+    if (!headers.has("Content-Type"))
+    {
+        spdlog::error("client did not provide a content type");
+        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        return;
+    }
+
+    utility::string_t content_type;
+    if (headers.match(U("Content-Type"), content_type))
+    {
+        spdlog::error("could not load content type from headers");
+        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        return;
+    }
+
+    if (content_type != "image/svg+xml")
+    {
+        spdlog::error("client provided non svg content type: {}", content_type);
+        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        return;
+    }
+
     boost::mutex::scoped_lock scoped_lock(mutex);
 
     auto body = message.extract_string(true).get();
+    spdlog::debug("render request {}", body);
 
     GError *error = NULL;
     RsvgHandle *handle;
@@ -109,10 +106,8 @@ void Server::handle_post(http_request message)
     handle = rsvg_handle_new_from_data((const guint8 *)body.c_str(), (gsize)body.size(), &error);
     if (error != NULL)
     {
-        std::cerr << "rsvg_handle_new_from_file error: " << std::endl
-                  << error->message << std::endl;
-        message.reply(status_codes::InternalError, U(error->message));
-
+        spdlog::error("rsvg_handle_new_from_file error {}", error->message);
+        message.reply(status_codes::InternalError, U("unable to parse payload"));
         g_error_free(error);
         return;
     }
@@ -130,8 +125,7 @@ void Server::handle_post(http_request message)
     status = cairo_status(cr);
     if (status)
     {
-        std::cerr << "cairo_status: " << std::endl
-                  << cairo_status_to_string(status) << std::endl;
+        spdlog::error("cairo_status error {}", cairo_status_to_string(status));
         message.reply(status_codes::InternalError, U(cairo_status_to_string(status)));
         return;
     }
@@ -140,8 +134,7 @@ void Server::handle_post(http_request message)
     status = cairo_surface_write_to_png_stream(surface, cairoWriteFunc, &out);
     if (status)
     {
-        std::cerr << "cairo_status: " << std::endl
-                  << cairo_status_to_string(status) << std::endl;
+        spdlog::error("cairo_status error {}", cairo_status_to_string(status));
         message.reply(status_codes::InternalError, U(cairo_status_to_string(status)));
         return;
     }
@@ -156,17 +149,11 @@ void Server::handle_post(http_request message)
     g_object_unref(handle);
 };
 
-//
-// A DELETE of the player resource leaves the table.
-//
 void Server::handle_delete(http_request message)
 {
     message.reply(status_codes::MethodNotAllowed, U("Method not allowed"));
 };
 
-//
-// A PUT to a table resource makes a card request (hit / stay).
-//
 void Server::handle_put(http_request message)
 {
     message.reply(status_codes::MethodNotAllowed, U("Method not allowed"));

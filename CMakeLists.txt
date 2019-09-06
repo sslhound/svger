@@ -4,7 +4,7 @@ if (UNIX)
 endif()
 
 cmake_minimum_required(VERSION 3.10)
-project(svger)
+project(svger CXX)
 
 set(CMAKE_BUILD_TYPE Debug)
 set(cpprestsdk_DIR /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/)
@@ -18,4 +18,5 @@ pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0>=2.35)
 pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)
 
 add_executable(svger main.cpp server.cpp)
+target_include_directories(svger PRIVATE include)
 target_link_libraries(svger PRIVATE cpprestsdk::cpprest PkgConfig::RSVG PkgConfig::CAIRO ${Boost_FILESYSTEM_LIBRARY} ${Boost_SYSTEM_LIBRARY})
