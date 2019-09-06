@@ -7,6 +7,7 @@
 #include <random>
 #include <sstream>
 #include <vector>
+#include <chrono>
 #include <cairo.h>
 #include <librsvg/rsvg.h>
 #include "cpprest/asyncrt_utils.h"
@@ -17,6 +18,7 @@
 #include "spdlog/spdlog.h"
 
 using namespace std;
+using namespace std::chrono;
 using namespace web;
 using namespace utility;
 using namespace http;
@@ -66,6 +68,7 @@ void Server::handle_get(http_request message)
 
 void Server::handle_post(http_request message)
 {
+    auto start = high_resolution_clock::now();
     auto headers = message.headers();
 
     if (!headers.has("Content-Type"))
@@ -74,9 +77,15 @@ void Server::handle_post(http_request message)
         message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
         return;
     }
+    if (!headers.has("Content-Length"))
+    {
+        spdlog::error("client did not provide a content length");
+        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        return;
+    }
 
     utility::string_t content_type;
-    if (headers.match(U("Content-Type"), content_type))
+    if (!headers.match(U("Content-Type"), content_type))
     {
         spdlog::error("could not load content type from headers");
         message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
@@ -90,10 +99,32 @@ void Server::handle_post(http_request message)
         return;
     }
 
+    int content_length = 0;
+    if (!headers.match(U("Content-Length"), content_length))
+    {
+        spdlog::error("could not load content length from headers");
+        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        return;
+    }
+
+    if (content_length > max_size)
+    {
+        spdlog::error("request body is too big: {} > {}", content_length, max_size);
+        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        return;
+    }
+
+    // spdlog::debug("{}", message.to_string());
+
     boost::mutex::scoped_lock scoped_lock(mutex);
 
-    auto body = message.extract_string(true).get();
-    spdlog::debug("render request {}", body);
+    auto body = message.extract_vector().get();
+    if (body.size() > max_size)
+    {
+        spdlog::error("That jerk lied and the request body is too big: {} > {}", body.size(), max_size);
+        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        return;
+    }
 
     GError *error = NULL;
     RsvgHandle *handle;
@@ -103,7 +134,7 @@ void Server::handle_post(http_request message)
     cairo_t *cr;
     cairo_status_t status;
 
-    handle = rsvg_handle_new_from_data((const guint8 *)body.c_str(), (gsize)body.size(), &error);
+    handle = rsvg_handle_new_from_data((const guint8 *)reinterpret_cast<char *>(body.data()), (gsize)body.size(), &error);
     if (error != NULL)
     {
         spdlog::error("rsvg_handle_new_from_file error {}", error->message);
@@ -140,13 +171,16 @@ void Server::handle_post(http_request message)
     }
 
     web::http::http_response response(status_codes::OK);
-    response.headers().set_content_type(U("image/svg+xml"));
+    response.headers().set_content_type(U("image/png"));
     response.set_body(out);
     message.reply(response);
 
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
     g_object_unref(handle);
+    auto stop = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(stop - start);
+    spdlog::info("Completed render time={}us payload_size={}", duration.count(), body.size());
 };
 
 void Server::handle_delete(http_request message)
