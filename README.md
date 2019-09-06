@@ -93,3 +93,7 @@ Run the container.
     [2019-09-06 13:54:19.553] [info] svger starting up environment=production listen=0.0.0.0:5003
     [2019-09-06 13:54:19.557] [info] Started server on http://0.0.0.0:5003/
     Press ENTER to exit.
+
+# Credits
+
+Thanks to the developers of cpprestsdk, spdlog, and CLI11.

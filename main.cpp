@@ -1,3 +1,6 @@
+// (c) 2019 SSL Hound
+// This code is licensed under MIT license (see LICENSE for details)
+
 #include <stdio.h>
 #include <signal.h>
 #include "cpprest/asyncrt_utils.h"
