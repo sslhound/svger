@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <signal.h>
 #include "cpprest/asyncrt_utils.h"
 #include "cpprest/http_listener.h"
 #include "cpprest/json.h"
@@ -52,12 +53,21 @@ void on_shutdown()
     return;
 }
 
+void signalHandler(int signum)
+{
+    spdlog::info("Interrupt signal received: {}", signum);
+
+    on_shutdown();
+
+    exit(signum);
+}
+
 int main(int argc, char *argv[])
 {
     spdlog::set_level(spdlog::level::debug);
 
     CLI::App app{"svger"};
-    utility::string_t listen = "http://0.0.0.0:5003";
+    utility::string_t listen = "0.0.0.0:5003";
     std::string environment = "development";
     int max_size = 1048576;
     app.add_option("--listen", listen, "Listen on a specific interface and port.")->envname("LISTEN")->capture_default_str();
@@ -83,11 +93,14 @@ int main(int argc, char *argv[])
     address.append(listen);
 
     on_initialize(address, max_size);
-    std::cout << "Press ENTER to exit." << std::endl;
 
-    std::string line;
-    std::getline(std::cin, line);
+    signal(SIGINT, signalHandler);
+    signal(SIGTERM, signalHandler);
 
-    on_shutdown();
+    while (1)
+    {
+        sleep(1);
+    }
+
     return 0;
 }
