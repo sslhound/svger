@@ -59,16 +59,22 @@ int main(int argc, char *argv[])
     CLI::App app{"svger"};
     utility::string_t listen = "http://0.0.0.0:5003";
     std::string environment = "development";
-    int max_size = 2 * 1048576;
-    app.add_option("--listen", listen, "Listen on a specific interface and port.")->envname("LISTEN");
-    app.add_option("--environment", environment, "The environment.")->envname("ENVIRONMENT");
-    app.add_option("--max-size", max_size, "The max SVG size to process.")->envname("MAX_SIZE");
+    int max_size = 1048576;
+    app.add_option("--listen", listen, "Listen on a specific interface and port.")->envname("LISTEN")->capture_default_str();
+    app.add_option("--environment", environment, "The environment.")->envname("ENVIRONMENT")->capture_default_str();
+    app.add_option("--max-size", max_size, "The max SVG size to process.")->envname("MAX_SIZE")->capture_default_str();
 
     CLI11_PARSE(app, argc, argv);
 
     if (environment == "production")
     {
         spdlog::set_level(spdlog::level::info);
+    }
+
+    if (max_size <= 0)
+    {
+        spdlog::critical("invalid option: max_size must be greater than 0");
+        return 1;
     }
 
     spdlog::info("svger starting up environment={} listen={}", environment, listen);

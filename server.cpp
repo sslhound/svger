@@ -14,7 +14,6 @@
 #include "cpprest/http_listener.h"
 #include "cpprest/json.h"
 #include "cpprest/uri.h"
-#include <boost/thread/mutex.hpp>
 #include "spdlog/spdlog.h"
 
 using namespace std;
@@ -40,7 +39,6 @@ private:
     void handle_delete(http_request message);
 
     http_listener m_listener;
-    boost::mutex mutex;
     int max_size;
 };
 
@@ -80,7 +78,7 @@ void Server::handle_post(http_request message)
     if (!headers.has("Content-Length"))
     {
         spdlog::error("client did not provide a content length");
-        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        message.reply(status_codes::LengthRequired);
         return;
     }
 
@@ -103,26 +101,24 @@ void Server::handle_post(http_request message)
     if (!headers.match(U("Content-Length"), content_length))
     {
         spdlog::error("could not load content length from headers");
-        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        message.reply(status_codes::LengthRequired);
         return;
     }
 
     if (content_length > max_size)
     {
         spdlog::error("request body is too big: {} > {}", content_length, max_size);
-        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        message.reply(status_codes::RequestEntityTooLarge, U("Unsupported Media Type"));
         return;
     }
 
     // spdlog::debug("{}", message.to_string());
 
-    boost::mutex::scoped_lock scoped_lock(mutex);
-
     auto body = message.extract_vector().get();
     if (body.size() > max_size)
     {
         spdlog::error("That jerk lied and the request body is too big: {} > {}", body.size(), max_size);
-        message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
+        message.reply(status_codes::RequestEntityTooLarge, U("Unsupported Media Type"));
         return;
     }
 

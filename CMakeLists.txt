@@ -12,7 +12,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall")
 
 find_package(PkgConfig REQUIRED)
-find_package(Boost COMPONENTS system filesystem REQUIRED)
+find_package(Boost COMPONENTS system REQUIRED)
 find_package(cpprestsdk REQUIRED)
 pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0>=2.35)
 pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)

@@ -2,7 +2,45 @@
 
 SVGer is a lightweight SVG to PNG rendering daemon.
 
-#
+# Usage
+
+From the `--help` option:
+
+    docker run --rm -i your_favorite_tag /app/svger --help
+    svger
+    Usage: /app/svger [OPTIONS]
+    
+    Options:
+      -h,--help                   Print this help message and exit
+      --listen TEXT=http://0.0.0.0:5003 (Env:LISTEN)
+                                  Listen on a specific interface and port.
+      --environment TEXT=development (Env:ENVIRONMENT)
+                                  The environment.
+      --max-size INT=1048576 (Env:MAX_SIZE)
+                                  The max SVG size to process.
+
+The `listen` option defaults to "0.0.0.0:5003" and can be set with the `LISTEN` environment variable.
+
+The `environment` option defaults to "development" and can be set with the `ENVIRONMENT` environment variable. Setting this to "production" will disable the "DEBUG" log level.
+
+The `max-size` option defaults to 1048576 (1 megabyte) and can be set with the `MAX_SIZE` environment variable. Setting this to less than 1 will prevent the daemon from starting.
+
+# API
+
+## POST /
+
+Submit an HTTP POST request to "/".
+
+* The request must have the "Content-Type" header set to "image/svg+xml".
+* The request body must be the SVG XML to be rendered.
+
+On success, the response will be a HTTP 200 OK with the "Content-Type" header set to "image/png" and the response body being the image data.
+
+On failure, the response may be ...
+
+* HTTP 415 when the content type is not "image/svg+xml"
+* HTTP 413 when the request body is too big
+* HTTP 500 when there is an internal error converting the SVG to a PNG
 
 # Performance Results
 
@@ -30,19 +68,28 @@ SVGer is a lightweight SVG to PNG rendering daemon.
     EOF
     $ cat > load<<EOF
     POST http://localhost:34568/
+    Content-Type: image/svg+xml
     @badge.svg
     EOF
-    $ cat load | vegeta attack -duration=60s | vegeta report
-    Requests      [total, rate, throughput]  3000, 50.02, 50.01
-    Duration      [total, attack, wait]      59.9831289s, 59.981168s, 1.9609ms
-    Latencies     [mean, 50, 95, 99, max]    1.775476ms, 1.974156ms, 2.024575ms, 2.05819ms, 7.0521ms
-    Bytes In      [total, mean]              8115000, 2705.00
-    Bytes Out     [total, mean]              2766000, 922.00
+    $ cat load | vegeta attack -duration=300s -rate 300 | vegeta report
+    Requests      [total, rate, throughput]  90000, 300.00, 300.00
+    Duration      [total, attack, wait]      4m59.9979737s, 4m59.9959831s, 1.9906ms
+    Latencies     [mean, 50, 95, 99, max]    1.864406ms, 1.976984ms, 2.026712ms, 2.115462ms, 19.0259ms
+    Bytes In      [total, mean]              243450000, 2705.00
+    Bytes Out     [total, mean]              82980000, 922.00
     Success       [ratio]                    100.00%
-    Status Codes  [code:count]               200:3000
+    Status Codes  [code:count]               200:90000
     Error Set:
 
 # Build and run
 
-docker build -t svger:dev --progress=plain .
-docker run -v d:/Projects/sslhound/svger/results:/app/results/ svger:dev
+Build the container.
+
+    $ docker build -t your_favorite_tag .
+
+Run the container.
+
+    $ docker run --rm -i -p 34568:5003 your_favorite_tag /app/svger --listen 0.0.0.0:5003 --environment production
+    [2019-09-06 13:54:19.553] [info] svger starting up environment=production listen=0.0.0.0:5003
+    [2019-09-06 13:54:19.557] [info] Started server on http://0.0.0.0:5003/
+    Press ENTER to exit.
