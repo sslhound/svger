@@ -12,7 +12,7 @@ From the `--help` option:
     
     Options:
       -h,--help                   Print this help message and exit
-      --listen TEXT=http://0.0.0.0:5003 (Env:LISTEN)
+      --listen TEXT=0.0.0.0:5003 (Env:LISTEN)
                                   Listen on a specific interface and port.
       --environment TEXT=development (Env:ENVIRONMENT)
                                   The environment.
