@@ -71,8 +71,7 @@ void Server::handle_get(http_request message)
 {
     auto start = high_resolution_clock::now();
     auto path = message.relative_uri().path();
-    spdlog::info("GET request for {}", path);
-    spdlog::info("{}", message.to_string());
+    spdlog::debug("{}", message.to_string());
 
     if (path == "/")
     {
@@ -82,24 +81,11 @@ void Server::handle_get(http_request message)
 
     spdlog::info("Preparing to connect to {}", backend + path);
 
-    // proxy_request.headers().add(L"Content-Type", L"application/json; charset=UTF-8");
-    // proxy_request.headers().add(L"Log-Type", log_type.c_str());
-    // proxy_request.headers().add(L"x-ms-date", rfcDate.c_str());
-    // proxy_request.headers().add(L"Authorization", signature.c_str());
-
-    // .then([=](http_response response) {
-    //     printf("Received response status code:%u\n", response.status_code());
-
-    //     // Write response body into the file.
-    //     return response.body().read_to_end(fileStream->streambuf());
-    // })
-
     http_client_config proxy_client_config;
     proxy_client_config.set_validate_certificates(!backend_insecure);
 
     http_request proxy_request(methods::GET);
 
-    // if-modified-since, if-unmodified-since, and if-none-match
     auto headers = message.headers();
     utility::string_t match_header;
     if (headers.match(U("if-modified-since"), match_header))
@@ -162,7 +148,7 @@ void Server::handle_get(http_request message)
     }
 
     auto body = proxy_response.extract_vector().get();
-    spdlog::info("proxy_response body {}", body.data());
+    spdlog::debug("proxy_response body {}", body.data());
 
     GError *error = NULL;
     RsvgHandle *handle;
@@ -208,7 +194,7 @@ void Server::handle_get(http_request message)
         return;
     }
 
-    spdlog::info("preparing to write {} bytes", out.size());
+    spdlog::debug("preparing to write {} bytes", out.size());
     response.set_body(out);
     message.reply(response);
 
