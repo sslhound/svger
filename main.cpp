@@ -20,7 +20,7 @@ class Server
 {
 public:
     Server() {}
-    Server(utility::string_t url, int max_size);
+    Server(utility::string_t url, int max_size, utility::string_t backend, bool backend_insecure);
 
     pplx::task<void> open() { return m_listener.open(); }
     pplx::task<void> close() { return m_listener.close(); }
@@ -32,17 +32,20 @@ private:
     void handle_delete(http_request message);
 
     http_listener m_listener;
+    int max_size;
+    utility::string_t backend;
+    bool backend_insecure;
 };
 
 std::unique_ptr<Server> g_httpServer;
 
-void on_initialize(const string_t &address, int max_size)
+void on_initialize(const string_t &address, int max_size, utility::string_t backend, bool backend_insecure)
 {
     uri_builder uri(address);
     uri.append_path(U("/"));
 
     utility::string_t addr = uri.to_uri().to_string();
-    g_httpServer = std::unique_ptr<Server>(new Server(addr, max_size));
+    g_httpServer = std::unique_ptr<Server>(new Server(addr, max_size, backend, backend_insecure));
     g_httpServer->open().wait();
 
     spdlog::info("Started server on {}", addr);
@@ -70,13 +73,17 @@ int main(int argc, char *argv[])
     spdlog::set_level(spdlog::level::debug);
 
     CLI::App app{"svger"};
-    utility::string_t listen = "0.0.0.0";
-    std::string environment = "development";
-    int max_size = 1048576;
+    std::string listen = "0.0.0.0";
     int port = 5003;
+    std::string environment = "development";
+    std::string backend = "";
+    int max_size = 1048576;
+    bool backend_insecure = false;
     app.add_option("--listen", listen, "Listen on a specific interface and port.")->envname("LISTEN")->capture_default_str();
     app.add_option("--port", port, "Listen on a specific port.")->envname("PORT")->capture_default_str();
     app.add_option("--environment", environment, "The environment.")->envname("ENVIRONMENT")->capture_default_str();
+    app.add_option("--backend", backend, "The backend to render from")->envname("BACKEND")->capture_default_str();
+    app.add_option("--backend-insecure", backend_insecure, "Ignore backend SSL validation")->envname("BACKEND_INSECURE")->capture_default_str();
     app.add_option("--max-size", max_size, "The max SVG size to process.")->envname("MAX_SIZE")->capture_default_str();
 
     CLI11_PARSE(app, argc, argv);
@@ -92,14 +99,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    spdlog::info("svger starting up environment={} listen={}", environment, listen);
+    spdlog::info("svger starting up environment={} listen={} backend={}", environment, listen, backend);
 
     std::ostringstream stringStream;
     stringStream << "http://" << listen << ":" << port;
-    std::string copyOfStr = stringStream.str();
-    utility::string_t address = U(stringStream.str());
 
-    on_initialize(address, max_size);
+    on_initialize(stringStream.str(), max_size, backend, backend_insecure);
 
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
