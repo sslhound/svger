@@ -8,7 +8,8 @@ project(svger CXX)
 
 set(CMAKE_BUILD_TYPE Debug)
 set(cpprestsdk_DIR /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/)
-set(prometheus-cpp_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendr/prometheus-cpp-master)
+set(prometheus-cpp_DIR /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake/)
+
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall")
 

@@ -20,6 +20,11 @@
 #include "cpprest/http_client.h"
 #include "spdlog/spdlog.h"
 #include "server.hpp"
+#include <prometheus/registry.h>
+#include <prometheus/collectable.h>
+#include <prometheus/counter.h>
+#include "prometheus/serializer.h"
+#include "prometheus/text_serializer.h"
 
 using namespace std;
 using namespace std::chrono;
@@ -29,6 +34,7 @@ using namespace http;
 using namespace web::http::experimental::listener;
 using namespace web::http;
 using namespace web::http::client;
+using namespace prometheus;
 
 static _cairo_status cairoWriteFunc(void *context, const unsigned char *data, unsigned int length)
 {
@@ -39,7 +45,59 @@ static _cairo_status cairoWriteFunc(void *context, const unsigned char *data, un
     return CAIRO_STATUS_SUCCESS;
 }
 
-Server::Server(ServerConfig config) : m_listener(config.addr), config(config)
+Server::Server(ServerConfig config) : m_listener(config.addr),
+                                      config(config),
+                                      registry(std::make_shared<prometheus::Registry>()),
+
+                                      server_bytes_transferred_family_(
+                                          BuildCounter()
+                                              .Name("server_transferred_bytes_total")
+                                              .Help("Transferred bytes to from svger")
+                                              .Register(*registry)),
+                                      server_bytes_transferred_(server_bytes_transferred_family_.Add({{"application", "svger"}})),
+
+                                      server_latencies_family_(
+                                          BuildSummary()
+                                              .Name("server_request_latencies")
+                                              .Help("Latencies of serving svger requests, in microseconds")
+                                              .Register(*registry)),
+                                      server_latencies_(server_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}})),
+
+                                      server_get_count_family_(
+                                          BuildCounter()
+                                              .Name("server_get_total")
+                                              .Help("Number of times a GET request was made")
+                                              .Register(*registry)),
+                                      server_get_count_(server_get_count_family_.Add({{"application", "svger"}})),
+
+                                      server_post_count_family_(
+                                          BuildCounter()
+                                              .Name("backend_post_total")
+                                              .Help("Number of times a POST request was made")
+                                              .Register(*registry)),
+                                      server_post_count_(server_post_count_family_.Add({{"application", "svger"}})),
+
+                                      client_bytes_transferred_family_(
+                                          BuildCounter()
+                                              .Name("backend_bytes_transferred_total")
+                                              .Help("Transferred bytes to from backend")
+                                              .Register(*registry)),
+                                      client_bytes_transferred_(client_bytes_transferred_family_.Add({{"application", "svger"}})),
+
+                                      client_request_total_family_(
+                                          BuildCounter()
+                                              .Name("backend_post_total")
+                                              .Help("Number of times a POST request was made")
+                                              .Register(*registry)),
+                                      client_request_total_(client_request_total_family_.Add({{"application", "svger"}})),
+
+                                      client_latencies_family_(
+                                          BuildSummary()
+                                              .Name("backend_request_latencies")
+                                              .Help("Latencies of backend requests, in microseconds")
+                                              .Register(*registry)),
+                                      client_latencies_(client_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}}))
+
 {
     if (config.enable_get)
     {
@@ -49,17 +107,31 @@ Server::Server(ServerConfig config) : m_listener(config.addr), config(config)
     {
         m_listener.support(methods::POST, std::bind(&Server::handle_post, this, std::placeholders::_1));
     }
+    collectables.push_back(registry);
 }
 
 void Server::handle_get(http_request message)
 {
     auto start = high_resolution_clock::now();
     auto path = message.relative_uri().path();
-    spdlog::debug("{}", message.to_string());
+    spdlog::debug("get request {}", message.to_string());
 
     if (path == "/")
     {
         message.reply(status_codes::OK, U("OK"));
+        return;
+    }
+
+    if (path == "/metrics")
+    {
+        auto metrics = CollectMetrics();
+
+        auto serializer = std::unique_ptr<Serializer>{new TextSerializer()};
+        auto metrics_body = serializer->Serialize(metrics);
+
+        server_bytes_transferred_.Increment(metrics_body.size());
+
+        message.reply(status_codes::OK, metrics_body);
         return;
     }
 
@@ -71,18 +143,20 @@ void Server::handle_get(http_request message)
     http_request proxy_request(methods::GET);
 
     auto headers = message.headers();
-    utility::string_t match_header;
-    if (headers.match(U("if-modified-since"), match_header))
+    utility::string_t if_modified_since;
+    if (headers.match(U("If-Modified-Since"), if_modified_since))
     {
-        proxy_request.headers().add(U("if-modified-since"), match_header);
+        proxy_request.headers().add(U("If-Modified-Since"), if_modified_since);
     }
-    if (headers.match(U("if-unmodified-since"), match_header))
+    utility::string_t if_unmodified_since;
+    if (headers.match(U("If-Unmodified-Since"), if_unmodified_since))
     {
-        proxy_request.headers().add(U("if-unmodified-since"), match_header);
+        proxy_request.headers().add(U("If-Unmodified-since"), if_unmodified_since);
     }
-    if (headers.match(U("if-none-match"), match_header))
+    utility::string_t if_none_match;
+    if (headers.match(U("If-None-Match"), if_none_match))
     {
-        proxy_request.headers().add(U("if-none-match"), match_header);
+        proxy_request.headers().add(U("If-None-Match"), if_none_match);
     }
 
     http_client proxy_client(config.backend + path, proxy_client_config);
@@ -99,6 +173,7 @@ void Server::handle_get(http_request message)
         message.reply(status_codes::InternalError);
         return;
     }
+    spdlog::debug("proxy response {}", proxy_response.to_string());
 
     if (proxy_response.status_code() == 304)
     {
@@ -115,15 +190,16 @@ void Server::handle_get(http_request message)
     web::http::http_response response(status_codes::OK);
 
     auto response_headers = proxy_response.headers();
-    if (response_headers.match(U("Cache-Control"), match_header))
+    utility::string_t cache_control;
+    if (response_headers.match(U("Cache-Control"), cache_control))
     {
-        response.headers().add(U("Cache-Control"), match_header);
+        response.headers().add(U("Cache-Control"), cache_control);
     }
-    if (response_headers.match(U("Last-Modified"), match_header))
+    utility::string_t last_modified;
+    if (response_headers.match(U("Last-Modified"), last_modified))
     {
-        response.headers().add(U("Last-Modified"), match_header);
+        response.headers().add(U("Last-Modified"), last_modified);
     }
-    response.headers().add(U("Content-Type"), match_header);
 
     auto body = proxy_response.extract_vector().get();
     spdlog::debug("proxy_response body {}", body.data());
@@ -175,6 +251,8 @@ void Server::handle_get(http_request message)
     response.headers().set_content_type(U("image/png"));
     response.set_body(out);
     message.reply(response);
+
+    server_bytes_transferred_.Increment(out.size());
 
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
@@ -298,3 +376,24 @@ void Server::handle_post(http_request message)
     auto duration = duration_cast<microseconds>(stop - start);
     spdlog::info("Completed render time={}us payload_size={}", duration.count(), body.size());
 };
+
+std::vector<MetricFamily> Server::CollectMetrics() const
+{
+    auto collected_metrics = std::vector<MetricFamily>{};
+
+    for (auto &&wcollectable : collectables)
+    {
+        auto collectable = wcollectable.lock();
+        if (!collectable)
+        {
+            continue;
+        }
+
+        auto &&metrics = collectable->Collect();
+        collected_metrics.insert(collected_metrics.end(),
+                                 std::make_move_iterator(metrics.begin()),
+                                 std::make_move_iterator(metrics.end()));
+    }
+
+    return collected_metrics;
+}
