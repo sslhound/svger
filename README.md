@@ -239,4 +239,4 @@ In your other deployments you can set the SVGer endpoint to "http://svger.defaul
 
 # Credits
 
-Thanks to the developers of cpprestsdk, spdlog, and CLI11.
+Thanks to the developers of prometheus-cpp, cpprestsdk, spdlog, and CLI11.

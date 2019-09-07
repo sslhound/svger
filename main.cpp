@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    spdlog::info("svger starting up environment={} listen={} backend={}", environment, listen, backend);
+    spdlog::info("svger starting up environment={} listen={} backend={} get={} post={}", environment, listen, backend, enable_get, enable_post);
 
     uri_builder addr_builder("http://" + listen);
     addr_builder.set_port(port);
