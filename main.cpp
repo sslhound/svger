@@ -9,6 +9,7 @@
 #include "cpprest/uri.h"
 #include "spdlog/spdlog.h"
 #include "CLI/CLI.hpp"
+#include "server.hpp"
 
 using namespace std;
 using namespace web;
@@ -16,39 +17,14 @@ using namespace http;
 using namespace utility;
 using namespace http::experimental::listener;
 
-class Server
-{
-public:
-    Server() {}
-    Server(utility::string_t url, int max_size, utility::string_t backend, bool backend_insecure);
-
-    pplx::task<void> open() { return m_listener.open(); }
-    pplx::task<void> close() { return m_listener.close(); }
-
-private:
-    void handle_get(http_request message);
-    void handle_put(http_request message);
-    void handle_post(http_request message);
-    void handle_delete(http_request message);
-
-    http_listener m_listener;
-    int max_size;
-    utility::string_t backend;
-    bool backend_insecure;
-};
-
 std::unique_ptr<Server> g_httpServer;
 
-void on_initialize(const string_t &address, int max_size, utility::string_t backend, bool backend_insecure)
+void on_initialize(const ServerConfig config)
 {
-    uri_builder uri(address);
-    uri.append_path(U("/"));
-
-    utility::string_t addr = uri.to_uri().to_string();
-    g_httpServer = std::unique_ptr<Server>(new Server(addr, max_size, backend, backend_insecure));
+    g_httpServer = std::unique_ptr<Server>(new Server(config));
     g_httpServer->open().wait();
 
-    spdlog::info("Started server on {}", addr);
+    spdlog::info("Started server on {}", config.addr);
 
     return;
 }
@@ -79,12 +55,16 @@ int main(int argc, char *argv[])
     std::string backend = "";
     int max_size = 1048576;
     bool backend_insecure = false;
+    bool enable_get = true;
+    bool enable_post = true;
     app.add_option("--listen", listen, "Listen on a specific interface and port.")->envname("LISTEN")->capture_default_str();
     app.add_option("--port", port, "Listen on a specific port.")->envname("PORT")->capture_default_str();
     app.add_option("--environment", environment, "The environment.")->envname("ENVIRONMENT")->capture_default_str();
     app.add_option("--backend", backend, "The backend to render from")->envname("BACKEND")->capture_default_str();
-    app.add_option("--backend-insecure", backend_insecure, "Ignore backend SSL validation")->envname("BACKEND_INSECURE")->capture_default_str();
+    app.add_option("--backend-insecure", backend_insecure, "Ignore backend SSL validation.")->envname("BACKEND_INSECURE")->capture_default_str();
     app.add_option("--max-size", max_size, "The max SVG size to process.")->envname("MAX_SIZE")->capture_default_str();
+    app.add_option("--enable-get", enable_get, "Enable to GET method.")->envname("ENABLE_GET")->capture_default_str();
+    app.add_option("--enable-post", enable_post, "Enable the POST method.")->envname("ENABLE_POST")->capture_default_str();
 
     CLI11_PARSE(app, argc, argv);
 
@@ -101,10 +81,19 @@ int main(int argc, char *argv[])
 
     spdlog::info("svger starting up environment={} listen={} backend={}", environment, listen, backend);
 
-    std::ostringstream stringStream;
-    stringStream << "http://" << listen << ":" << port;
+    uri_builder addr_builder("http://" + listen);
+    addr_builder.set_port(port);
+    addr_builder.set_path(U("/"));
 
-    on_initialize(stringStream.str(), max_size, backend, backend_insecure);
+    ServerConfig config;
+    config.addr = addr_builder.to_uri().to_string();
+    config.max_size = max_size;
+    config.enable_get = enable_get;
+    config.enable_post = enable_post;
+    config.backend = backend;
+    config.backend_insecure = backend_insecure;
+
+    on_initialize(config);
 
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);

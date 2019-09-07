@@ -19,6 +19,7 @@
 #include "cpprest/uri.h"
 #include "cpprest/http_client.h"
 #include "spdlog/spdlog.h"
+#include "server.hpp"
 
 using namespace std;
 using namespace std::chrono;
@@ -29,27 +30,6 @@ using namespace web::http::experimental::listener;
 using namespace web::http;
 using namespace web::http::client;
 
-class Server
-{
-public:
-    Server() {}
-    Server(utility::string_t url, int max_size, utility::string_t backend, bool backend_insecure);
-
-    pplx::task<void> open() { return m_listener.open(); }
-    pplx::task<void> close() { return m_listener.close(); }
-
-private:
-    void handle_get(http_request message);
-    void handle_put(http_request message);
-    void handle_post(http_request message);
-    void handle_delete(http_request message);
-
-    http_listener m_listener;
-    int max_size;
-    utility::string_t backend;
-    bool backend_insecure;
-};
-
 static _cairo_status cairoWriteFunc(void *context, const unsigned char *data, unsigned int length)
 {
     auto outData = static_cast<std::vector<uint8_t> *>(context);
@@ -59,12 +39,16 @@ static _cairo_status cairoWriteFunc(void *context, const unsigned char *data, un
     return CAIRO_STATUS_SUCCESS;
 }
 
-Server::Server(utility::string_t url, int max_size, utility::string_t backend, bool backend_insecure) : m_listener(url), max_size(max_size), backend(backend), backend_insecure(backend_insecure)
+Server::Server(ServerConfig config) : m_listener(config.addr), config(config)
 {
-    m_listener.support(methods::GET, std::bind(&Server::handle_get, this, std::placeholders::_1));
-    m_listener.support(methods::PUT, std::bind(&Server::handle_put, this, std::placeholders::_1));
-    m_listener.support(methods::POST, std::bind(&Server::handle_post, this, std::placeholders::_1));
-    m_listener.support(methods::DEL, std::bind(&Server::handle_delete, this, std::placeholders::_1));
+    if (config.enable_get)
+    {
+        m_listener.support(methods::GET, std::bind(&Server::handle_get, this, std::placeholders::_1));
+    }
+    if (config.enable_post)
+    {
+        m_listener.support(methods::POST, std::bind(&Server::handle_post, this, std::placeholders::_1));
+    }
 }
 
 void Server::handle_get(http_request message)
@@ -79,10 +63,10 @@ void Server::handle_get(http_request message)
         return;
     }
 
-    spdlog::info("Preparing to connect to {}", backend + path);
+    spdlog::info("Preparing to connect to {}", config.backend + path);
 
     http_client_config proxy_client_config;
-    proxy_client_config.set_validate_certificates(!backend_insecure);
+    proxy_client_config.set_validate_certificates(!config.backend_insecure);
 
     http_request proxy_request(methods::GET);
 
@@ -101,8 +85,7 @@ void Server::handle_get(http_request message)
         proxy_request.headers().add(U("if-none-match"), match_header);
     }
 
-    http_client proxy_client(backend + path, proxy_client_config);
-    spdlog::info("Created client");
+    http_client proxy_client(config.backend + path, proxy_client_config);
 
     http_response proxy_response;
 
@@ -116,8 +99,6 @@ void Server::handle_get(http_request message)
         message.reply(status_codes::InternalError);
         return;
     }
-
-    spdlog::info("response status_code {}", proxy_response.status_code());
 
     if (proxy_response.status_code() == 304)
     {
@@ -142,10 +123,7 @@ void Server::handle_get(http_request message)
     {
         response.headers().add(U("Last-Modified"), match_header);
     }
-    if (response_headers.match(U("Content-Type"), match_header))
-    {
-        response.headers().add(U("Content-Type"), match_header);
-    }
+    response.headers().add(U("Content-Type"), match_header);
 
     auto body = proxy_response.extract_vector().get();
     spdlog::debug("proxy_response body {}", body.data());
@@ -194,7 +172,7 @@ void Server::handle_get(http_request message)
         return;
     }
 
-    spdlog::debug("preparing to write {} bytes", out.size());
+    response.headers().set_content_type(U("image/png"));
     response.set_body(out);
     message.reply(response);
 
@@ -232,7 +210,7 @@ void Server::handle_post(http_request message)
         return;
     }
 
-    if (content_type != "image/svg+xml")
+    if (content_type.rfind("image/svg+xml", 0) != 0)
     {
         spdlog::error("client provided non svg content type: {}", content_type);
         message.reply(status_codes::UnsupportedMediaType, U("Unsupported Media Type"));
@@ -247,9 +225,9 @@ void Server::handle_post(http_request message)
         return;
     }
 
-    if (content_length > max_size)
+    if (content_length > config.max_size)
     {
-        spdlog::error("request body is too big: {} > {}", content_length, max_size);
+        spdlog::error("request body is too big: {} > {}", content_length, config.max_size);
         message.reply(status_codes::RequestEntityTooLarge, U("Unsupported Media Type"));
         return;
     }
@@ -257,9 +235,9 @@ void Server::handle_post(http_request message)
     // spdlog::debug("{}", message.to_string());
 
     auto body = message.extract_vector().get();
-    if (body.size() > max_size)
+    if (body.size() > config.max_size)
     {
-        spdlog::error("That jerk lied and the request body is too big: {} > {}", body.size(), max_size);
+        spdlog::error("That jerk lied and the request body is too big: {} > {}", body.size(), config.max_size);
         message.reply(status_codes::RequestEntityTooLarge, U("Unsupported Media Type"));
         return;
     }
@@ -319,14 +297,4 @@ void Server::handle_post(http_request message)
     auto stop = high_resolution_clock::now();
     auto duration = duration_cast<microseconds>(stop - start);
     spdlog::info("Completed render time={}us payload_size={}", duration.count(), body.size());
-};
-
-void Server::handle_delete(http_request message)
-{
-    message.reply(status_codes::MethodNotAllowed, U("Method not allowed"));
-};
-
-void Server::handle_put(http_request message)
-{
-    message.reply(status_codes::MethodNotAllowed, U("Method not allowed"));
 };

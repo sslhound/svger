@@ -4,7 +4,7 @@ RUN apt-get install -y librsvg2-dev libcairo2 libcairo2-dev libcpprest-dev cppch
 
 FROM cpp-build-base AS build
 WORKDIR /src
-COPY CMakeLists.txt main.cpp server.cpp ./
+COPY CMakeLists.txt main.cpp server.hpp server.cpp ./
 COPY include ./include
 RUN cmake . && make
 
