@@ -224,6 +224,12 @@ void Server::handle_get(http_request message)
         response.headers().add(U("Last-Modified"), last_modified);
     }
 
+    utility::string_t date_header;
+    if (response_headers.match(U("Date"), date_header))
+    {
+        response.headers().add(U("Date"), date_header);
+    }
+
     auto body = proxy_response.extract_vector().get();
     spdlog::debug("proxy_response body {}", body.data());
 

@@ -17,8 +17,16 @@ From the `--help` option:
       --port INT=5003 (Env:PORT)  Listen on a specific port.
       --environment TEXT=development (Env:ENVIRONMENT)
                                   The environment.
+      --backend TEXT (Env:BACKEND)
+                                  The backend to render from
+      --backend-insecure BOOLEAN=0 (Env:BACKEND_INSECURE)
+                                  Ignore backend SSL validation.
       --max-size INT=1048576 (Env:MAX_SIZE)
                                   The max SVG size to process.
+      --enable-get BOOLEAN=1 (Env:ENABLE_GET)
+                                  Enable to GET method.
+      --enable-post BOOLEAN=1 (Env:ENABLE_POST)
+                                  Enable the POST method.
 
 The `listen` option defaults to "0.0.0.0" and can be set with the `LISTEN` environment variable.
 
@@ -28,7 +36,87 @@ The `environment` option defaults to "development" and can be set with the `ENVI
 
 The `max-size` option defaults to 1048576 (1 megabyte) and can be set with the `MAX_SIZE` environment variable. Setting this to less than 1 will prevent the daemon from starting.
 
+The `backend-insecure` option defaults to false and can be set with `BACKEND_INSECURE`. It is used to ignore validation of backend SSL certificates.
+
+The `enable-get` option defaults to true and can be set with `ENABLE_GET`. When it is set, the `GET /`, `GET /metrics`, and `GET /*` HTTP resources are available.
+
+The `enable-post` option defaults to true and can be set with `ENABLE_POST`. When it is set, the `POST /` HTTP resource is available.
+
 # API
+
+## GET /
+
+Returns the content "OK". Can be used for health checks.
+
+## GET /metrics
+
+Returns prometheus metrics using a text serializer. All metrics are tagged with application=svger.
+
+Example:
+
+```text
+# HELP server_transferred_bytes_total Transferred bytes to from svger
+# TYPE server_transferred_bytes_total counter
+server_transferred_bytes_total{application="svger"} 5393.000000
+# HELP server_get_latencies Latencies of serving svger GET requests, in microseconds
+# TYPE server_get_latencies summary
+server_get_latencies_count{application="svger"} 2
+server_get_latencies_sum{application="svger"} 21514991.000000
+server_get_latencies{application="svger",quantile="0.500000"} 250175.000000
+server_get_latencies{application="svger",quantile="0.900000"} 250175.000000
+server_get_latencies{application="svger",quantile="0.990000"} 250175.000000
+# HELP server_post_latencies Latencies of serving svger POST requests, in microseconds
+# TYPE server_post_latencies summary
+server_post_latencies_count{application="svger"} 1
+server_post_latencies_sum{application="svger"} 28116.000000
+server_post_latencies{application="svger",quantile="0.500000"} 28116.000000
+server_post_latencies{application="svger",quantile="0.900000"} 28116.000000
+server_post_latencies{application="svger",quantile="0.990000"} 28116.000000
+# HELP server_get_total Number of times a GET request was made
+# TYPE server_get_total counter
+server_get_total{application="svger"} 5.000000
+# HELP backend_post_total Number of times a POST request was made
+# TYPE backend_post_total counter
+backend_post_total{application="svger"} 1.000000
+# HELP backend_bytes_transferred_total Transferred bytes to from backend
+# TYPE backend_bytes_transferred_total counter
+backend_bytes_transferred_total{application="svger"} 0.000000
+# HELP backend_post_total Number of times a backend request was made
+# TYPE backend_post_total counter
+backend_post_total{application="svger"} 3.000000
+# HELP backend_request_latencies Latencies of backend requests, in microseconds
+# TYPE backend_request_latencies summary
+backend_request_latencies_count{application="svger"} 3
+backend_request_latencies_sum{application="svger"} 21599143.000000
+backend_request_latencies{application="svger",quantile="0.500000"} 189646.000000
+backend_request_latencies{application="svger",quantile="0.900000"} 201076.000000
+backend_request_latencies{application="svger",quantile="0.990000"} 201076.000000
+# HELP render_latencies Latencies of render work, in microseconds
+# TYPE render_latencies summary
+render_latencies_count{application="svger"} 3
+render_latencies_sum{application="svger"} 30878.000000
+render_latencies{application="svger",quantile="0.500000"} 1457.000000
+render_latencies{application="svger",quantile="0.900000"} 1593.000000
+render_latencies{application="svger",quantile="0.990000"} 1593.000000
+```
+
+## GET /*
+
+Used to do read-through PNG renders of SVG content. When a request is made and the backend option set, the server will make an HTTP GET call to the backend with the URI provided in the original GET request. The response body must be SVG data. On success, PNG is returned by this endpoint.
+
+The following headers are forwarded:
+
+* If-Modified-Since
+* If-Unmodified-Since
+* If-None-Match
+
+If the backend supplies them, the following headers are returned:
+
+* Cache-Control
+* Last-Modified
+* Date
+
+If the backend returns a 304, the server will return an empty 304.
 
 ## POST /
 
