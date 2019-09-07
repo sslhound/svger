@@ -79,6 +79,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (!enable_get && !enable_post)
+    {
+        spdlog::critical("invalid option: at least one of enable-get and enable-post must be true");
+        return 1;
+    }
+
     spdlog::info("svger starting up environment={} listen={} backend={}", environment, listen, backend);
 
     uri_builder addr_builder("http://" + listen);
