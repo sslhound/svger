@@ -56,12 +56,19 @@ Server::Server(ServerConfig config) : m_listener(config.addr),
                                               .Register(*registry)),
                                       server_bytes_transferred_(server_bytes_transferred_family_.Add({{"application", "svger"}})),
 
-                                      server_latencies_family_(
+                                      server_get_latencies_family_(
                                           BuildSummary()
-                                              .Name("server_request_latencies")
-                                              .Help("Latencies of serving svger requests, in microseconds")
+                                              .Name("server_get_latencies")
+                                              .Help("Latencies of serving svger GET requests, in microseconds")
                                               .Register(*registry)),
-                                      server_latencies_(server_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}})),
+                                      server_get_latencies_(server_get_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}})),
+
+                                      server_post_latencies_family_(
+                                          BuildSummary()
+                                              .Name("server_post_latencies")
+                                              .Help("Latencies of serving svger POST requests, in microseconds")
+                                              .Register(*registry)),
+                                      server_post_latencies_(server_post_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}})),
 
                                       server_get_count_family_(
                                           BuildCounter()
@@ -87,7 +94,7 @@ Server::Server(ServerConfig config) : m_listener(config.addr),
                                       client_request_total_family_(
                                           BuildCounter()
                                               .Name("backend_post_total")
-                                              .Help("Number of times a POST request was made")
+                                              .Help("Number of times a backend request was made")
                                               .Register(*registry)),
                                       client_request_total_(client_request_total_family_.Add({{"application", "svger"}})),
 
@@ -96,7 +103,14 @@ Server::Server(ServerConfig config) : m_listener(config.addr),
                                               .Name("backend_request_latencies")
                                               .Help("Latencies of backend requests, in microseconds")
                                               .Register(*registry)),
-                                      client_latencies_(client_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}}))
+                                      client_latencies_(client_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}})),
+
+                                      render_latencies_family_(
+                                          BuildSummary()
+                                              .Name("render_latencies")
+                                              .Help("Latencies of render work, in microseconds")
+                                              .Register(*registry)),
+                                      render_latencies_(render_latencies_family_.Add({{"application", "svger"}}, Summary::Quantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}}))
 
 {
     if (config.enable_get)
@@ -112,7 +126,8 @@ Server::Server(ServerConfig config) : m_listener(config.addr),
 
 void Server::handle_get(http_request message)
 {
-    auto start = high_resolution_clock::now();
+    auto request_start = std::chrono::steady_clock::now();
+    server_get_count_.Increment();
     auto path = message.relative_uri().path();
     spdlog::debug("get request {}", message.to_string());
 
@@ -163,6 +178,8 @@ void Server::handle_get(http_request message)
 
     http_response proxy_response;
 
+    client_request_total_.Increment();
+    auto proxy_request_start = std::chrono::steady_clock::now();
     try
     {
         proxy_response = proxy_client.request(proxy_request).get();
@@ -173,6 +190,10 @@ void Server::handle_get(http_request message)
         message.reply(status_codes::InternalError);
         return;
     }
+    auto proxy_request_stop = std::chrono::steady_clock::now();
+    auto proxy_request_duration = std::chrono::duration_cast<std::chrono::microseconds>(proxy_request_stop - proxy_request_start);
+    client_latencies_.Observe(proxy_request_duration.count());
+
     spdlog::debug("proxy response {}", proxy_response.to_string());
 
     if (proxy_response.status_code() == 304)
@@ -186,6 +207,8 @@ void Server::handle_get(http_request message)
         message.reply(proxy_response.status_code());
         return;
     }
+
+    client_bytes_transferred_.Increment(proxy_response.headers().content_length());
 
     web::http::http_response response(status_codes::OK);
 
@@ -212,6 +235,7 @@ void Server::handle_get(http_request message)
     cairo_t *cr;
     cairo_status_t status;
 
+    auto render_start = std::chrono::steady_clock::now();
     handle = rsvg_handle_new_from_data((const guint8 *)reinterpret_cast<char *>(body.data()), (gsize)body.size(), &error);
     if (error != NULL)
     {
@@ -248,6 +272,10 @@ void Server::handle_get(http_request message)
         return;
     }
 
+    auto render_stop = std::chrono::steady_clock::now();
+    auto render_duration = std::chrono::duration_cast<std::chrono::microseconds>(render_stop - render_start);
+    render_latencies_.Observe(render_duration.count());
+
     response.headers().set_content_type(U("image/png"));
     response.set_body(out);
     message.reply(response);
@@ -257,14 +285,16 @@ void Server::handle_get(http_request message)
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
     g_object_unref(handle);
-    auto stop = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(stop - start);
-    spdlog::info("Completed render time={}us payload_size={} result_size={}", duration.count(), body.size(), out.size());
+
+    auto request_stop = std::chrono::steady_clock::now();
+    auto request_stop_duration = std::chrono::duration_cast<std::chrono::microseconds>(request_stop - request_start);
+    server_get_latencies_.Observe(request_stop_duration.count());
 };
 
 void Server::handle_post(http_request message)
 {
-    auto start = high_resolution_clock::now();
+    auto request_start = std::chrono::steady_clock::now();
+    server_post_count_.Increment();
     auto headers = message.headers();
 
     if (!headers.has("Content-Type"))
@@ -328,6 +358,8 @@ void Server::handle_post(http_request message)
     cairo_t *cr;
     cairo_status_t status;
 
+    auto render_start = std::chrono::steady_clock::now();
+
     handle = rsvg_handle_new_from_data((const guint8 *)reinterpret_cast<char *>(body.data()), (gsize)body.size(), &error);
     if (error != NULL)
     {
@@ -364,17 +396,24 @@ void Server::handle_post(http_request message)
         return;
     }
 
+    auto render_stop = std::chrono::steady_clock::now();
+    auto render_duration = std::chrono::duration_cast<std::chrono::microseconds>(render_stop - render_start);
+    render_latencies_.Observe(render_duration.count());
+
     web::http::http_response response(status_codes::OK);
     response.headers().set_content_type(U("image/png"));
     response.set_body(out);
     message.reply(response);
 
+    server_bytes_transferred_.Increment(out.size());
+
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
     g_object_unref(handle);
-    auto stop = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(stop - start);
-    spdlog::info("Completed render time={}us payload_size={}", duration.count(), body.size());
+
+    auto request_stop = std::chrono::steady_clock::now();
+    auto request_stop_duration = std::chrono::duration_cast<std::chrono::microseconds>(request_stop - request_start);
+    server_post_latencies_.Observe(request_stop_duration.count());
 };
 
 std::vector<MetricFamily> Server::CollectMetrics() const

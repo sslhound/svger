@@ -48,8 +48,11 @@ private:
     Family<Counter> &server_bytes_transferred_family_;
     Counter &server_bytes_transferred_;
 
-    Family<Summary> &server_latencies_family_;
-    Summary &server_latencies_;
+    Family<Summary> &server_get_latencies_family_;
+    Summary &server_get_latencies_;
+
+    Family<Summary> &server_post_latencies_family_;
+    Summary &server_post_latencies_;
 
     Family<Counter> &server_get_count_family_;
     Counter &server_get_count_;
@@ -65,4 +68,7 @@ private:
 
     Family<Summary> &client_latencies_family_;
     Summary &client_latencies_;
+
+    Family<Summary> &render_latencies_family_;
+    Summary &render_latencies_;
 };
