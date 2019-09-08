@@ -1,5 +1,11 @@
 # SVGer
 
+<p align="center">
+    <a href="https://www.sslhound.com/v/www.sslhound.com/" alt="www.sslhound.com status">
+        <img src="https://www.sslhound.com/v/www.sslhound.com/badge.png" />
+    </a>
+</p>
+
 SVGer is a lightweight SVG to PNG rendering daemon.
 
 # Usage
