@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:experimental
 FROM ubuntu as cpp-build-base
+ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y build-essential git cmake autoconf libtool pkg-config
 RUN apt-get install -y librsvg2-dev libcairo2 libcairo2-dev libcpprest-dev cppcheck
 RUN apt-get install -y libcurl4-openssl-dev
